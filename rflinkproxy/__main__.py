@@ -173,7 +173,11 @@ class RFLinkProxy:
                 if ";VERSION;" not in raw_packet:
                     encode_packet = encode_tx_packet(raw_packet)
                     print("--send--" + raw_packet + " (encoded " + encode_packet + ")" )
-                    self.raw_callback(encode_packet)
+                    """self.raw_callback(encode_packet)  this sends to all, following only to client connecting second"""
+                    writers = [i[1] for i in list(clients)]
+                    for writer in writers:
+                        writer.write(str(encode_packet).encode() + CRLF)
+                    
             else:
                 log.debug(
                     " %s:%s: forwarding packet %s to RFLink",
