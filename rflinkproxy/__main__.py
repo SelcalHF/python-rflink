@@ -90,6 +90,8 @@ def decode_tx_packet(packet: str) -> dict:
     ... }
     True
     """
+
+    """print("--dtxp--"+packet)"""
     node_id, protocol, attrs = packet.split(DELIM, 2)
 
     data = cast(Dict[str, Any], {"node": PacketHeader(node_id).name})
@@ -111,6 +113,28 @@ def decode_tx_packet(packet: str) -> dict:
     return data
 
 
+def encode_tx_packet(raw_packet):
+    """ Encodes packets from client, to bounce back to clients
+    Format:
+    Passed in raw_packet, then received by RfLink:
+    10;NewKaku;20cda37;a;OFF;
+    20;0A;NewKaku;ID=020cda37;SWITCH=a;CMD=OFF;
+    Using 10 as second line which seems to be counter for received messages...
+    """
+    packet=raw_packet.split(DELIM)
+    if packet[1] == "newkaku":
+        packet[1] = "NewKaku"
+    if packet[1] ==  "aster":
+        packet[1] = "Aster"
+    if packet[1] == "bosch":
+        packet[1] = "Bosch"
+
+    if packet[4].isnumeric():
+        packet[4] = "SET_LEVEL="+packet[4]
+    else:
+        packet[4] = "CMD="+packet[4].upper()
+    return "20;10;"+packet[1]+";ID="+packet[2].rjust(8, "0")+";SWITCH="+packet[3]+";"+packet[4]+";"
+
 class RFLinkProxy:
     """Proxy commands received to multiple clients."""
 
@@ -128,6 +152,7 @@ class RFLinkProxy:
         """Parse raw packet string into packet dict."""
         peer = writer.get_extra_info("peername")
         log.debug(" %s:%s: processing data: %s", peer[0], peer[1], raw_packet)
+        """print("--hrtp--" + raw_packet)"""
         packet = None
         try:
             packet = decode_tx_packet(raw_packet)
@@ -145,6 +170,10 @@ class RFLinkProxy:
                     peer[1],
                     raw_packet,
                 )
+                if ";VERSION;" not in raw_packet:
+                    encode_packet = encode_tx_packet(raw_packet)
+                    print("--send--" + raw_packet + " (encoded " + encode_packet + ")" )
+                    self.raw_callback(encode_packet)
             else:
                 log.debug(
                     " %s:%s: forwarding packet %s to RFLink",
@@ -153,8 +182,6 @@ class RFLinkProxy:
                     raw_packet,
                 )
             await self.forward_packet(writer, packet, raw_packet)
-        else:
-            log.warning(" %s:%s: no valid packet %s", peer[0], peer[1], packet)
 
     async def forward_packet(self, writer, packet, raw_packet):
         """Forward packet from client to RFLink."""
@@ -191,6 +218,7 @@ class RFLinkProxy:
                     line = line + DELIM
 
                 if valid_packet(line):
+                    """print("--line--"+line)"""
                     await self.handle_raw_tx_packet(writer, line)
                 else:
                     log.warning(
@@ -215,6 +243,8 @@ class RFLinkProxy:
         writers = [i[1] for i in list(clients)]
         for writer in writers:
             writer.write(str(raw_packet).encode() + CRLF)
+
+        print("--recv--" + raw_packet)
 
     def reconnect(self, exc=None):
         """Schedule reconnect after connection has been unexpectedly lost."""
